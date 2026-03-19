@@ -9,16 +9,6 @@ arbitrary-precision arithmetic ([mpmath](https://mpmath.org/)), and their
 Fourier-space counterparts W(ℓ) via the Levin integration method
 (`levin`, part of [OneCovariance](https://github.com/rreischke/OneCovariance)).
 
-## Repository structure
-
-```
-cosebis_benchmark/
-├── src/
-│   └── get_cosebis.py        # main computation script
-├── plots/
-│   └── make_plots.ipynb      # plotting notebook
-└── benchmarks_cosebis/       # output directory (created automatically)
-```
 
 ## Installation
 
@@ -41,7 +31,7 @@ On Debian/Ubuntu: `sudo apt install libgsl-dev`.
 ### 2. Install this package
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/rreischke/cosebis_benchmark
 cd cosebis_benchmark
 pip install -e .
 ```
@@ -84,14 +74,8 @@ All parameters have sensible defaults and can be overridden from the command lin
 # Default run (20 modes, tmin=2', tmax=300', 200 d.p.)
 python src/get_cosebis.py
 
-# Custom angular range and fewer modes
-python src/get_cosebis.py --tmin_mm 0.5 --tmax_mm 100 --Nmax_mm 5
-
 # Quick low-precision test
 python src/get_cosebis.py --dps 50 --N_theta 1000 --N_ell 1000 --Nmax_mm 3
-
-# Write output to a custom directory
-python src/get_cosebis.py --outdir_path /path/to/output
 ```
 
 ### Output files
@@ -104,8 +88,7 @@ For each mode n = 1 … Nmax the following ASCII files are written to `--outdir_
 | `Tm_bench_mark_{tmin}_{tmax}_mode_{n:02d}.txt` | `theta_rad`, `Tm` | T_-(θ) in radians |
 | `Well_{tmin}_{tmax}_mode_{n:02d}.txt`          | `ell`, `Well`     | W(ℓ) |
 
-Every file starts with a header line recording all input parameters so results
-are fully reproducible:
+Every file starts with a header line recording all input parameters
 
 ```
 # tmin_mm=2.0 tmax_mm=300.0 Nmax_mm=20 dps=200 N_theta=10000 ...
@@ -120,12 +103,3 @@ figures are saved into the `plots/` directory:
 
 - `Tp_Tm_benchmarks_tmin{tmin}_tmax{tmax}.pdf` — T_+(θ) and T_-(θ) per mode
 - `Well_benchmarks_tmin{tmin}_tmax{tmax}.pdf`  — ℓ W(ℓ) per mode
-
-LaTeX rendering is used automatically if a `latex` binary is found on the PATH.
-
-## Reference
-
-Schneider, P., Eifler, T., & Krause, E. (2010).
-*COSEBIs: Extracting the full E-/B-mode information from cosmic shear correlation functions.*
-A&A, 520, A116.
-[doi:10.1051/0004-6361/200913875](https://doi.org/10.1051/0004-6361/200913875)
