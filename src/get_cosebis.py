@@ -36,7 +36,8 @@ For each mode n = 1 … Nmax the following files are written to --outdir_path:
 
 import numpy as np
 import levin
-from joblib import Parallel, delayed
+import multiprocessing
+from functools import partial
 from tqdm import tqdm
 from mpmath import mp
 import mpmath
@@ -61,7 +62,7 @@ parser.add_argument("--ell_min",   type=float, default=1,        help="Minimum m
 parser.add_argument("--ell_max",   type=float, default=1e5,      help="Maximum multipole")
 parser.add_argument("--N_ell",     type=int,   default=int(1e5), help="Number of ell sampling points")
 parser.add_argument("--N_theta",   type=int,   default=int(1e4), help="Number of theta sampling points")
-parser.add_argument("--num_cores", type=int,   default=4,        help="Number of cores for pylevin")
+parser.add_argument("--num_cores", type=int,   default=4,        help="Number of worker processes for W(ell) (-1 = all cores)")
 parser.add_argument("--dps",       type=int,   default=200,      help="mpmath decimal places of precision")
 parser.add_argument("--Nmax_mm",   type=int,   default=20,       help="Number of COSEBIS modes to compute")
 parser.add_argument("--tmin_mm",   type=float, default=2,        help="Minimum angular scale [arcmin]")
@@ -75,7 +76,7 @@ ell_min   = args.ell_min
 ell_max   = args.ell_max
 N_ell     = args.N_ell
 N_theta   = args.N_theta
-num_cores = args.num_cores
+num_cores = None if args.num_cores == -1 else args.num_cores
 Nmax_mm   = args.Nmax_mm
 mp.dps    = args.dps          # set mpmath global precision
 
@@ -289,13 +290,12 @@ def t_minus(tmin, n, norm, coeff_row, theta):
     return theta, result
 
 
-def integrate_single_ell(ell_val, theta, tp, pbar, nmax=50):
+def integrate_single_ell(ell_val, theta, tp, nmax=50):
     """Evaluate W(ell) at a single ell value using Levin quadrature.
 
-    Designed to be called from a joblib thread pool.  A fresh levin.Levin
-    instance is created per call so that threads do not share mutable state.
-    Sub-intervals for the integrator are placed at every nmax-th local maximum
-    of J_0(ell*theta) to guide the adaptive quadrature across oscillations.
+    A fresh levin.Levin instance is created per call so workers do not share
+    mutable state.  Sub-intervals are placed at every nmax-th local maximum of
+    J_0(ell*theta) to guide the adaptive quadrature across oscillations.
 
     Parameters
     ----------
@@ -305,8 +305,6 @@ def integrate_single_ell(ell_val, theta, tp, pbar, nmax=50):
         Angular grid in radians (float64).
     tp : np.ndarray, shape (N_theta, 1)
         T_+(theta) values (float64).
-    pbar : tqdm.tqdm
-        Shared progress bar; updated by one tick on completion.
     nmax : int, optional
         Stride for selecting J_0 maxima as sub-interval boundaries.
 
@@ -324,14 +322,36 @@ def integrate_single_ell(ell_val, theta, tp, pbar, nmax=50):
     theta_maxima[1:-1] = theta[maxima_idx]
     theta_maxima[0] = theta[0]
     theta_maxima[-1] = theta[-1]
-    result = lev_w.cquad_integrate_single_well(theta_maxima,0)[0]
-    pbar.update()
-    return result
+    return lev_w.cquad_integrate_single_well(theta_maxima,0)[0]
 
 
-def get_W_ell(ell, theta, tp):
+def _integrate_chunk(ell_chunk, theta, tp):
+    """Evaluate W(ell) for a contiguous block of ell values (one process).
+
+    Parameters
+    ----------
+    ell_chunk : np.ndarray
+        Subset of ell values assigned to this worker.
+    theta : np.ndarray, shape (N_theta,)
+        Angular grid in radians (float64).
+    tp : np.ndarray, shape (N_theta, 1)
+        T_+(theta) values (float64).
+
+    Returns
+    -------
+    list of float
+        W(ell) for each element of ell_chunk, in order.
+    """
+    return [integrate_single_ell(e, theta, tp) for e in ell_chunk]
+
+
+def get_W_ell(ell, theta, tp, n_jobs=None):
     """Compute W(ell) = int T_+(theta) J_0(ell*theta) theta d(theta)
-    using the Levin integration method (pylevin).
+    using the Levin.
+
+    The ell array is randomly shuffled before chunking so that each worker
+    gets a mix of cheap (small ell, few J_0 oscillations) and expensive
+    (large ell, many oscillations) values.
 
     Parameters
     ----------
@@ -341,21 +361,29 @@ def get_W_ell(ell, theta, tp):
         Angular grid in radians.
     tp : np.ndarray, shape (N_theta, 1), dtype float64
         T_+(theta) values.
+    n_jobs : int or None, optional
+        Number of worker processes.  None uses all available cores.
 
     Returns
     -------
     result_levin : np.ndarray, shape (N_ell, 1)
-        W(ell) evaluated at each ell.
+        W(ell) evaluated at each ell, in the original ell order.
     """
-    #lev_w = levin.Levin(0, 16, 128, 1e-14, 1000, num_cores)
-    #lev_w.init_integral(theta,(theta*tp[:,0])[:,None]*np.ones(num_cores)[None,:],True,True)
-    #return lev_w.single_bessel_many_args(ell,0,theta[0],theta[-1])
-    with tqdm(total=len(ell), desc="W(ell)", unit="ell") as pbar:
-        vals = Parallel(n_jobs=-1, backend='threading')(
-            delayed(integrate_single_ell)(ell[i_ell], theta, tp, pbar)
-            for i_ell in range(len(ell))
-        )
-    return np.array(vals)[:,None]
+    n_workers = n_jobs or multiprocessing.cpu_count()
+    # shuffle indices so each chunk gets a mix of small and large ell
+    perm = np.random.permutation(len(ell))
+    inv_perm = np.empty_like(perm)
+    inv_perm[perm] = np.arange(len(ell))
+    chunks = np.array_split(ell[perm], n_workers)
+    worker = partial(_integrate_chunk, theta=theta, tp=tp)
+    ctx = multiprocessing.get_context('fork')
+    with ctx.Pool(processes=n_workers) as pool:
+        chunk_results = list(tqdm(
+            pool.imap(worker, chunks),
+            total=len(chunks), desc="W(ell)", unit="chunk"
+        ))
+    vals_shuffled = np.array([v for chunk in chunk_results for v in chunk])
+    return vals_shuffled[inv_perm, None]
 # ---------------------------------------------------------------------------
 # Compute T_+ and T_- for all modes
 # ---------------------------------------------------------------------------
@@ -417,7 +445,7 @@ for i in range(1, Nmax_mm + 1):
     tp_i    = np.array([float(x) for x in Tp_bench_mark[n][1]], dtype=np.float64)
     
     t0 = time.time()
-    Well_i = get_W_ell(ell, theta_i, tp_i[:, None])
+    Well_i = get_W_ell(ell, theta_i, tp_i[:, None], n_jobs=num_cores)
     t1 = time.time()
     print(f"Time taken for mode {i}: {t1 - t0:.2f} seconds")
     
