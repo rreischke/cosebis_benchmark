@@ -7,7 +7,8 @@ E/B-Integrals (COSEBIs) following Schneider et al. (2010).
 
 All T_+/T_- calculations are performed with mpmath arbitrary-precision
 arithmetic (controlled by --dps).  W(ell) integrals are evaluated with
-the `levin` C++ extension, which is part of the OneCovariance package.
+the `levin` C++ extension (part of OneCovariance) using Levin quadrature,
+parallelised over ell values via joblib (threading backend, all cores).
 
 Usage
 -----
@@ -35,12 +36,16 @@ For each mode n = 1 … Nmax the following files are written to --outdir_path:
 
 import numpy as np
 import levin
+from joblib import Parallel, delayed
+from tqdm import tqdm
 from mpmath import mp
 import mpmath
 from pathlib import Path
 import argparse
 import scipy.integrate
 from scipy.special import jv
+from scipy.signal import argrelextrema
+
 
 
 
@@ -84,6 +89,9 @@ tmax_rad = mp.mpf(args.tmax_mm) * arcmintorad
 
 # Log-spaced theta grid in radians
 theta_grid = [tmin_rad * mp.exp(mp.mpf(i) / (N_theta - 1) * mp.log(tmax_rad / tmin_rad))
+              for i in range(N_theta)]
+
+theta_grid_arcmin = [args.tmin_mm * mp.exp(mp.mpf(i) / (N_theta - 1) * mp.log(args.tmax_mm / args.tmin_mm))
               for i in range(N_theta)]
 
 # Log-ratio used as integration upper limit (eq. 32 in Schneider+2010)
@@ -281,6 +289,46 @@ def t_minus(tmin, n, norm, coeff_row, theta):
     return theta, result
 
 
+def integrate_single_ell(ell_val, theta, tp, pbar, nmax=50):
+    """Evaluate W(ell) at a single ell value using Levin quadrature.
+
+    Designed to be called from a joblib thread pool.  A fresh levin.Levin
+    instance is created per call so that threads do not share mutable state.
+    Sub-intervals for the integrator are placed at every nmax-th local maximum
+    of J_0(ell*theta) to guide the adaptive quadrature across oscillations.
+
+    Parameters
+    ----------
+    ell_val : float
+        Single multipole at which to evaluate W.
+    theta : np.ndarray, shape (N_theta,)
+        Angular grid in radians (float64).
+    tp : np.ndarray, shape (N_theta, 1)
+        T_+(theta) values (float64).
+    pbar : tqdm.tqdm
+        Shared progress bar; updated by one tick on completion.
+    nmax : int, optional
+        Stride for selecting J_0 maxima as sub-interval boundaries.
+
+    Returns
+    -------
+    float
+        W(ell_val).
+    """
+    lev_w = levin.Levin(0, 16, 128, 1e-14, 1000, 1)
+    well = jv(0, ell_val * theta)
+    lev_w.init_w_ell(theta, well[:,None])
+    lev_w.init_integral(theta,(theta*tp[:,0])[:,None],True,True)
+    maxima_idx = argrelextrema(well, np.greater)[0][::nmax]
+    theta_maxima = np.zeros(len(maxima_idx) + 2)
+    theta_maxima[1:-1] = theta[maxima_idx]
+    theta_maxima[0] = theta[0]
+    theta_maxima[-1] = theta[-1]
+    result = lev_w.cquad_integrate_single_well(theta_maxima,0)[0]
+    pbar.update()
+    return result
+
+
 def get_W_ell(ell, theta, tp):
     """Compute W(ell) = int T_+(theta) J_0(ell*theta) theta d(theta)
     using the Levin integration method (pylevin).
@@ -299,11 +347,15 @@ def get_W_ell(ell, theta, tp):
     result_levin : np.ndarray, shape (N_ell, 1)
         W(ell) evaluated at each ell.
     """
-    lev_w = levin.Levin(0, 16, 64, 1e-10, 200, num_cores)
-    lev_w.init_integral(theta,(theta*tp[:,0])[:,None]*np.ones(num_cores)[None,:],True,True)
-    return lev_w.single_bessel_many_args(ell,0,theta[0],theta[-1])
-
-
+    #lev_w = levin.Levin(0, 16, 128, 1e-14, 1000, num_cores)
+    #lev_w.init_integral(theta,(theta*tp[:,0])[:,None]*np.ones(num_cores)[None,:],True,True)
+    #return lev_w.single_bessel_many_args(ell,0,theta[0],theta[-1])
+    with tqdm(total=len(ell), desc="W(ell)", unit="ell") as pbar:
+        vals = Parallel(n_jobs=-1, backend='threading')(
+            delayed(integrate_single_ell)(ell[i_ell], theta, tp, pbar)
+            for i_ell in range(len(ell))
+        )
+    return np.array(vals)[:,None]
 # ---------------------------------------------------------------------------
 # Compute T_+ and T_- for all modes
 # ---------------------------------------------------------------------------
@@ -342,14 +394,14 @@ for i in range(1, Nmax_mm + 1):
 
     with open(fname_p, "w", encoding="ascii") as f:
         f.write(param_header)
-        f.write("# theta_rad Tp_benchmark\n")
-        for th, val in zip(theta_i, tp_i):
+        f.write("# theta_arcmin Tp_benchmark\n")
+        for th, val in zip(theta_grid_arcmin, tp_i):
             f.write(f"{mp.nstr(mp.mpf(th), n=n_digits)} {mp.nstr(mp.mpf(val), n=n_digits)}\n")
 
     with open(fname_m, "w", encoding="ascii") as f:
         f.write(param_header)
-        f.write("# theta_rad Tm_benchmark\n")
-        for th, val in zip(theta_i, tm_i):
+        f.write("# theta_arcmin Tm_benchmark\n")
+        for th, val in zip(theta_grid_arcmin, tm_i):
             f.write(f"{mp.nstr(mp.mpf(th), n=n_digits)} {mp.nstr(mp.mpf(val), n=n_digits)}\n")
 
 
@@ -357,12 +409,18 @@ for i in range(1, Nmax_mm + 1):
 # Compute W(ell) and save to disk
 # ---------------------------------------------------------------------------
 
-for i in range(Nmin, Nmax_mm + 1):
+import time
+for i in range(1, Nmax_mm + 1):
     n = i - 1
     print(f"Computing W(ell) mode {i}/{Nmax_mm} ...")
     theta_i = np.array([float(x) for x in Tp_bench_mark[n][0]], dtype=np.float64)
     tp_i    = np.array([float(x) for x in Tp_bench_mark[n][1]], dtype=np.float64)
+    
+    t0 = time.time()
     Well_i = get_W_ell(ell, theta_i, tp_i[:, None])
+    t1 = time.time()
+    print(f"Time taken for mode {i}: {t1 - t0:.2f} seconds")
+    
     fname = outdir / f"Well_{args.tmin_mm}_{args.tmax_mm}_mode_{i:02d}.txt"
-    np.savetxt(fname, np.column_stack([ell, Well_i]),
+    np.savetxt(fname, np.column_stack([ell, 2*np.array(Well_i)]),
                header=param_header.lstrip("# ").rstrip("\n") + "\nell Well", comments="# ")

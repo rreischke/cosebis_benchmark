@@ -10,6 +10,9 @@ setup(
     install_requires=[
         "numpy",
         "mpmath",
+        "scipy",
+        "joblib",
+        "tqdm",
         # levin is part of OneCovariance — install from https://github.com/rreischke/OneCovariance
     ],
     extras_require={

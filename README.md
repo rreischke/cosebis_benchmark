@@ -42,7 +42,10 @@ pip install -e .
 |---------|---------|---------|
 | `numpy` | Array operations and file I/O | PyPI |
 | `mpmath` | Arbitrary-precision arithmetic for T_+/T_- | PyPI |
-| `levin` | Levin integration for W(ℓ) | [OneCovariance](https://github.com/rreischke/OneCovariance) |
+| `scipy` | Simpson integration and special functions | PyPI |
+| `joblib` | Parallel W(ℓ) computation across ℓ values | PyPI |
+| `tqdm` | Progress bar for W(ℓ) computation | PyPI |
+| `levin` | Levin quadrature kernel for W(ℓ) | [OneCovariance](https://github.com/rreischke/OneCovariance) |
 | `matplotlib` | Plotting (notebook only) | PyPI |
 
 ## Usage
@@ -64,7 +67,7 @@ All parameters have sensible defaults and can be overridden from the command lin
 --N_ell        Number of ell sampling points        (default: 100000)
 --ell_min      Minimum multipole                    (default: 1)
 --ell_max      Maximum multipole                    (default: 1e5)
---num_cores    CPU cores for levin                  (default: 4)
+--num_cores    Recorded in output headers (unused at runtime; W(ℓ) uses all available cores via joblib) (default: 4)
 --outdir_path  Output directory                     (default: ./../benchmarks_cosebis)
 ```
 
@@ -84,9 +87,9 @@ For each mode n = 1 … Nmax the following ASCII files are written to `--outdir_
 
 | File | Columns | Description |
 |------|---------|-------------|
-| `Tp_bench_mark_{tmin}_{tmax}_mode_{n:02d}.txt` | `theta_rad`, `Tp` | T_+(θ) in radians |
-| `Tm_bench_mark_{tmin}_{tmax}_mode_{n:02d}.txt` | `theta_rad`, `Tm` | T_-(θ) in radians |
-| `Well_{tmin}_{tmax}_mode_{n:02d}.txt`          | `ell`, `Well`     | W(ℓ) |
+| `Tp_benchmark_{tmin}_{tmax}_mode_{n:02d}.txt` | `theta_arcmin`, `Tp_benchmark` | T_+(θ) in arcmin |
+| `Tm_benchmark_{tmin}_{tmax}_mode_{n:02d}.txt` | `theta_arcmin`, `Tm_benchmark` | T_-(θ) in arcmin |
+| `Well_{tmin}_{tmax}_mode_{n:02d}.txt`         | `ell`, `Well`                  | W(ℓ) |
 
 Every file starts with a header line recording all input parameters
 
