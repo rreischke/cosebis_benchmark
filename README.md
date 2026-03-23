@@ -67,7 +67,7 @@ All parameters have sensible defaults and can be overridden from the command lin
 --N_ell        Number of ell sampling points        (default: 100000)
 --ell_min      Minimum multipole                    (default: 1)
 --ell_max      Maximum multipole                    (default: 1e5)
---num_cores    Recorded in output headers (unused at runtime; W(ℓ) uses all available cores via joblib) (default: 4)
+--num_cores    Number of worker processes for W(ℓ) (default: 4; set to -1 for all available cores)
 --outdir_path  Output directory                     (default: ./../benchmarks_cosebis)
 ```
 
@@ -98,7 +98,7 @@ Every file starts with a header line recording all input parameters
 # theta_rad Tp_bench_mark
 ```
 
-### Plotting
+### Plotting — `plots/`
 
 Open and run `plots/make_plots.ipynb`.  Set `tmin` and `tmax` at the top of
 the data-loading cell to match the values used during computation.  Two PDF
@@ -106,3 +106,18 @@ figures are saved into the `plots/` directory:
 
 - `Tp_Tm_benchmarks_tmin{tmin}_tmax{tmax}.pdf` — T_+(θ) and T_-(θ) per mode
 - `Well_benchmarks_tmin{tmin}_tmax{tmax}.pdf`  — ℓ W(ℓ) per mode
+
+### SNR and validation — `comparison_snr/`
+
+`comparison_snr/make_comparison.ipynb` illustrates how to use the benchmark
+filter functions to compute COSEBIs E-modes from a convergence power spectrum
+and assess their signal-to-noise ratio.  It covers:
+
+1. **Computing E-modes** — loads the W_n(ℓ) benchmarks, interpolates
+   C_ℓ^κκ in log-log space, and integrates with Simpson's rule to obtain
+   E_n^{ij} for all tomographic pairs and modes.
+
+2. **Numerical accuracy** — estimates the Simpson integration error via
+   Richardson extrapolation and propagates it into a quadrature significance
+   SNR_err = √(δE^T C^{-1} δE).  When SNR_err ≪ 1 the integration errors
+   are negligible relative to the noise floor of the covariance.
