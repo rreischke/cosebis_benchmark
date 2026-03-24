@@ -342,7 +342,7 @@ def _integrate_chunk(ell_chunk, theta, tp):
     list of float
         W(ell) for each element of ell_chunk, in order.
     """
-    return [integrate_single_ell(e, theta, tp) for e in ell_chunk]
+    return [integrate_single_ell(e, theta, tp, nmax=5) for e in ell_chunk]
 
 
 def get_W_ell(ell, theta, tp, n_jobs=None):
@@ -449,6 +449,6 @@ for i in range(1, Nmax_mm + 1):
     t1 = time.time()
     print(f"Time taken for mode {i}: {t1 - t0:.2f} seconds")
     
-    fname = outdir / f"Well_{args.tmin_mm}_{args.tmax_mm}_mode_{i:02d}.txt"
+    fname = outdir / f"high_acc_Well_{args.tmin_mm}_{args.tmax_mm}_mode_{i:02d}.txt"
     np.savetxt(fname, np.column_stack([ell, 2*np.array(Well_i)]),
                header=param_header.lstrip("# ").rstrip("\n") + "\nell Well", comments="# ")
