@@ -438,17 +438,21 @@ for i in range(1, Nmax_mm + 1):
 # ---------------------------------------------------------------------------
 
 import time
-for i in range(1, Nmax_mm + 1):
-    n = i - 1
-    print(f"Computing W(ell) mode {i}/{Nmax_mm} ...")
-    theta_i = np.array([float(x) for x in Tp_bench_mark[n][0]], dtype=np.float64)
-    tp_i    = np.array([float(x) for x in Tp_bench_mark[n][1]], dtype=np.float64)
-    
-    t0 = time.time()
-    Well_i = get_W_ell(ell, theta_i, tp_i[:, None], n_jobs=num_cores)
-    t1 = time.time()
-    print(f"Time taken for mode {i}: {t1 - t0:.2f} seconds")
-    
-    fname = outdir / f"high_acc_Well_{args.tmin_mm}_{args.tmax_mm}_mode_{i:02d}.txt"
-    np.savetxt(fname, np.column_stack([ell, 2*np.array(Well_i)]),
-               header=param_header.lstrip("# ").rstrip("\n") + "\nell Well", comments="# ")
+
+get_well_as_well = False
+
+if get_well_as_well:
+    for i in range(1, Nmax_mm + 1):
+        n = i - 1
+        print(f"Computing W(ell) mode {i}/{Nmax_mm} ...")
+        theta_i = np.array([float(x) for x in Tp_bench_mark[n][0]], dtype=np.float64)
+        tp_i    = np.array([float(x) for x in Tp_bench_mark[n][1]], dtype=np.float64)
+        
+        t0 = time.time()
+        Well_i = get_W_ell(ell, theta_i, tp_i[:, None], n_jobs=num_cores)
+        t1 = time.time()
+        print(f"Time taken for mode {i}: {t1 - t0:.2f} seconds")
+        
+        fname = outdir / f"high_acc_Well_{args.tmin_mm}_{args.tmax_mm}_mode_{i:02d}.txt"
+        np.savetxt(fname, np.column_stack([ell, 2*np.array(Well_i)]),
+                header=param_header.lstrip("# ").rstrip("\n") + "\nell Well", comments="# ")

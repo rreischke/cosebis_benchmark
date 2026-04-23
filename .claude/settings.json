@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python3 add_eb_cell.py)",
+      "Bash(python3 -c \"import sys,json; nb=json.load\\(sys.stdin\\); print\\(f'Cells: {len\\(nb[\\\\\"cells\\\\\"]\\)}'\\); [print\\(f'\\\\\\\\n--- Cell {i} [{c[\\\\\"cell_type\\\\\"]}] ---\\\\\\\\n' + ''.join\\(c['source']\\)[:500]\\) for i,c in enumerate\\(nb['cells']\\)]\")",
+      "Bash(python3 -c \"import sys,json; nb=json.load\\(sys.stdin\\); print\\(''.join\\(nb['cells'][0]['source']\\)\\)\")",
+      "Bash(python3 /tmp/add_mask_cells.py)",
+      "Bash(python3 /tmp/fix_mask_cells.py)",
+      "Bash(conda info *)"
+    ],
+    "additionalDirectories": [
+      "/tmp",
+      "/private/tmp"
+    ]
+  }
+}
